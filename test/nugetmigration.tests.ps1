@@ -34,7 +34,7 @@ Describe "Nuget migration tests" {
                    
                     It "should restore after" {
                         rmdir $root/packages -Force -Confirm:$false -Recurse
-                        invoke nuget restore $($project.name)
+                        invoke msbuild /t:restore $($project.name)
                         $LASTEXITCODE | should be 0
                     }
                     It "should build after" {
