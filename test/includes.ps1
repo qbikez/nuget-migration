@@ -1,0 +1,1 @@
+. $PSScriptRoot\..\src\invoke-nugetmigration.ps1
