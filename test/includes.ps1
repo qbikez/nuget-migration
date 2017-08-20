@@ -5,47 +5,19 @@ req pester
 req process
 req pathutils
 
+. $PSScriptRoot\..\scripts\_helpers.ps1
 
-function get-msbuildPath($version = $null)
-{
-  try {
-        if ($version -eq 15) {
-            $paths = @(
-                "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2017\BuildTools\MSBuild\15.0\Bin\"
-                "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Preview\Enterprise\MSBuild\15.0\bin"
-            )
-
-            foreach($p in $paths) {
-                if (Test-Path "$p\msbuild.exe") { return $p }
-            }            
-        }
-        $versions = (gci HKLM:\SOFTWARE\Microsoft\MSBuild\ToolsVersions) | sort -Descending @{ expression={ 
-        $_.Name | split-path -Leaf | % { 
-            [double]::Parse($_, [System.Globalization.CultureInfo]::InvariantCulture) 
-            }
-        }}
-        if ($version -ne $null) {
-            $ver = $versions | ? {
-                 ($_.Name | split-path -Leaf | % { 
-            [double]::Parse($_, [System.Globalization.CultureInfo]::InvariantCulture) 
-            }) -eq $version
-            }
-        }
-        
-        else {
-            $ver = $versions | select -First 1
-        }
-        $path = Get-ItemProperty -path "hklm:/$($ver.Name)" -Name MSBuildToolsPath     
-        $path = $path.MSBuildToolsPath  
-        write-host "found msbuild version $($ver.Name) at $path"
-        return $path
-    }   
-    catch {
-        return $null
-    }
+# check if msbuild 15 is on path
+$msbuild = where-is msbuild
+if ($msbuild -ne $null) {
+    $v = msbuild /version | select -last 1   
+    if (!$v.startswith("15.")) { $msbuild = $null }
 }
 
-get-msbuildpath -version 15 |? { $_ -ne $null } | Add-ToPath -first
+# if it isn't try to find it
+if ($msbuild -eq $null) {
+    get-msbuildpath -version 15 |? { $_ -ne $null } | Add-ToPath -first
+}
 
 $msbuild = where-is msbuild
 
