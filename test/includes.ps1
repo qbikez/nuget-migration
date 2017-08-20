@@ -45,4 +45,9 @@ function get-msbuildPath($version = $null)
     }
 }
 
-get-msbuildpath -version 15 | Add-ToPath -first
+get-msbuildpath -version 15 |? { $_ -ne $null } | Add-ToPath -first
+
+$msbuild = where-is msbuild
+
+write-verbose "msbuild found at:" -Verbose
+$msbuild | format-table | out-string | write-verbose -Verbose
