@@ -1,0 +1,45 @@
+version: 1.0.{build}
+
+os:
+- Visual Studio 2017
+
+#clone_script:
+#- ps: 'write-host "cloning... this replaces default clone method"'
+
+install:
+- git submodule update --init --recursive
+- ps: scripts/init.ps1 
+- ps: scripts/restore.ps1 -pesterVersion 4.0.2
+
+#assembly_info:
+#  patch: true
+#  file: '**\AssemblyInfo.*'
+#  assembly_version: '{version}'
+#  assembly_file_version: '{version}'
+#  assembly_informational_version: '{version}'
+
+build_script:
+- ps: scripts/build.ps1
+
+test_script:
+- ps: scripts/lib/test.appveyor.ps1
+- ps: Uninstall-Module pathutils -verbose
+- ps: Install-Module -Name csproj -RequiredVersion 1.0.6 -Force -Verbose
+- ps: Get-module csproj -listavailable | format-list
+- ps: Import-Module csproj -verbose
+
+artifacts:
+- path: artifacts
+
+on_success:
+- ps: 'write-host "event: build success!"'
+on_failure:
+- ps: 'write-host "event: build error!"'
+on_finish:
+- ps: 'write-host "event: build finish! pushing artifacts."'
+#- ps: test-path "artifacts" 
+- 7z a artifacts.zip artifacts
+- ps: Push-AppveyorArtifact "artifacts.zip"
+
+deploy_script:
+- ps: $branch = $env:APPVEYOR_REPO_BRANCH; write-host "Branch=$branch"
