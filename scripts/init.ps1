@@ -1,1 +1,1 @@
-write-verbose "nothing to init" -Verbose
+install-module require -verbose
