@@ -11,6 +11,7 @@ function get-msbuildPath($version = $null)
   try {
         if ($version -eq 15) {
             $paths = @(
+                "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2017\BuildTools\MSBuild\15.0\Bin\"
                 "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Preview\Enterprise\MSBuild\15.0\bin"
             )
 
