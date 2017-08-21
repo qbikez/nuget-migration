@@ -11,6 +11,7 @@ namespace project1
         NDesk.Options.OptionSet options;
         static void Main(string[] args)
         {
+            Console.WriteLine(Newtonsoft.Json.JsonConvert.SerializeObject(new { exitCide = 0 }));
         }
     }
 }

@@ -11,8 +11,9 @@ function get-msbuildPath {
         # check if msbuild 15 is on path
         $msbuild = where-is msbuild
         if ($msbuild -ne $null) {
-            if ($v -ne $null) {
-                $v = msbuild /version | select -last 1   
+            if ($version -ne $null) {
+                $v = msbuild /version | select -last 1
+                Write-Verbose "found msbuild version $v on PATH"
                 if (!$v.startswith($version)) { $msbuild = $null }
             }
         }

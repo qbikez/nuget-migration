@@ -1,5 +1,9 @@
 $script:ns = 'http://schemas.microsoft.com/developer/msbuild/2003'
 
+ipmo require
+req csproj
+
+
 function _doBackup {
     param($csproj)
 
@@ -23,52 +27,81 @@ function _doBackup {
     }
 }
 
-function Invoke-NugetMigration {
+function ConvertFrom-PackagesConfigToPackageReferences {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)]
         $csproj
     )
 
-    Write-Verbose "migrating project '$csproj' to PackageReference format"
+    if ($csproj -isnot [csproj]) {
+        $csproj = csproj\import-csproj $csproj
+    }
+    
+    Write-Verbose "migrating project '$($csproj.Name)' to PackageReference format"
     Write-Verbose "doing backup"
-    _doBackup $csproj
+    _doBackup $csproj.path
 
     
-    Write-Warning "This is not implemented yet"
     
-    ipmo require
-    req csproj
-    
-    $file = $csproj
-    $csproj = csproj\import-csproj $file
     if ((test-path "packages.config")) {
-        $packagesConfig = csproj\import-packagesConfig "packages.config"
-
-        $oldRefs = csproj\get-nugetreferences $csproj
-        $newRefs = @()
-        foreach($pkg in $packagesConfig.packages) {
-            $ref = New-NugetReferenceNode $csproj.xml
-            $ref.Include = $pkg.Id
-            $ref.Version = $pkg.Version
-
-            $newRefs += $ref
-        }
-        $oldRefs | % { $_.Node.ParentNode.RemoveChild($_.Node)}
-        $newRefs | % { 
-            $itemgroup = [System.Xml.XmlElement]$csproj.xml.CreateNode([System.Xml.XmlNodeType]::Element, "", "ItemGroup", $ns)
-            $itemgroup.AppendChild($_)
-            $null = $csproj.xml.project.AppendChild($itemgroup)
-        }
-
-        $csproj.save()
-
+        _convertPackagesConfig $csproj
         remove-item "packages.config"
     }
+
+    Remove-ObsoleteProjectItems $csproj
+    
+    $csproj.save()
 
     Write-Verbose "Done"
 }
 
+function _convertPackagesConfig {
+    param($csproj)
+    
+    $packagesConfig = csproj\import-packagesConfig "packages.config"
+    
+    $oldRefs = csproj\get-nugetreferences $csproj
+    $newRefs = @()
+    foreach ($pkg in $packagesConfig.packages) {
+        $ref = New-NugetReferenceNode $csproj.xml
+        $ref.Include = $pkg.Id
+        $ref.Version = $pkg.Version
+    
+        $newRefs += $ref
+    }
+    $oldRefs | % { $_.Node.ParentNode.RemoveChild($_.Node)}
+    
+    $other = get-nodes $csproj.xml -nodeName "ItemGroup"
+    $lastItemGroup = $null
+    if ($other.Count -gt 0) {
+        $last = ([System.Xml.XmlNode]$other[$other.Count - 1].Node)
+    }
+    
+    $newRefs | % { 
+        $itemgroup = [System.Xml.XmlElement]$csproj.xml.CreateNode([System.Xml.XmlNodeType]::Element, "", "ItemGroup", $ns)            
+        $itemgroup.AppendChild($_)
+        if ($lastItemGroup -ne $null) {
+            $null = $lastItemGroup.ParentNode.InsertAfter($itemgroup, $lastItemGroup)
+            $lastItemGroup = $itemgroup
+        }
+        else {
+            $null = $csproj.xml.project.AppendChild($itemgroup)
+            $lastItemGroup = $itemgroup
+        }   
+    }
+}
+
+
+function Remove-ObsoleteProjectItems {
+    param([csproj]$csproj)
+
+    foreach ($item in $csproj.Xml.project.ItemGroup) {
+        if ($item.Compile -ne $null) {
+            $item.ParentNode.RemoveChild($item)
+        }
+    }
+}
 function New-NugetReferenceNode([System.Xml.xmldocument]$document) {
     <#
        <ProjectReference Include="..\xxx\xxx.csproj">
@@ -76,12 +109,12 @@ function New-NugetReferenceNode([System.Xml.xmldocument]$document) {
          <Name>xxx</Name>
        </ProjectReference>
     #>
-       $projectRef = [System.Xml.XmlElement]$document.CreateNode([System.Xml.XmlNodeType]::Element, "", "PackageReference", $ns)
+    $projectRef = [System.Xml.XmlElement]$document.CreateNode([System.Xml.XmlNodeType]::Element, "", "PackageReference", $ns)
 
-       $idAttr = [System.Xml.XmlAttribute]$document.CreateAttribute("Include")
-       $null = $projectRef.Attributes.Append($idAttr)
-       $versionAttr = [System.Xml.XmlAttribute]$document.CreateAttribute("Version")
-       $null = $projectRef.Attributes.Append($versionAttr)
+    $idAttr = [System.Xml.XmlAttribute]$document.CreateAttribute("Include")
+    $null = $projectRef.Attributes.Append($idAttr)
+    $versionAttr = [System.Xml.XmlAttribute]$document.CreateAttribute("Version")
+    $null = $projectRef.Attributes.Append($versionAttr)
 
-       return $projectRef
-   }
+    return $projectRef
+}
