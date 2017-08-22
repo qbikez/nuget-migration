@@ -56,6 +56,7 @@ Describe "migration build tests" {
     }
 
 }
+
 Describe "packages.config to PackageReferences migration tests" {  
     copy-item "$psscriptroot\input\*" "testdrive:" -Recurse
     In "testdrive:\" {
