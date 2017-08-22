@@ -2,7 +2,7 @@
 
 Describe "migration build tests" {
     copy-item "$psscriptroot\input\*" "testdrive:" -Recurse
-    remove-item "$psscriptroot\out" -Recurse -Force -Confirm:$false
+    if (test-path "$psscriptroot\out") { remove-item "$psscriptroot\out" -Recurse -Force -Confirm:$false }
     if (!(test-path "$psscriptroot\out\before")) { $null = mkdir "$psscriptroot\out\before" }
     if (!(test-path "$psscriptroot\out\after")) { $null = mkdir "$psscriptroot\out\after" }
 
