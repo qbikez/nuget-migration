@@ -46,6 +46,10 @@ function ConvertFrom-PackagesConfigToPackageReferences {
     
     if ((test-path "packages.config")) {
         _convertPackagesConfig $csproj
+        $node = $csproj.Xml.project.ItemGroup.None | where { $_.Include -eq 'packages.config'} 
+        if ($node -ne $null) {
+            $node.ParentNode.RemoveChild($node)
+        }
         remove-item "packages.config"
     }
 

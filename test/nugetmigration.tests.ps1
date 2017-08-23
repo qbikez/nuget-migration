@@ -68,21 +68,30 @@ Describe "packages.config to PackageReferences migration tests" {
             Context "project: $($project.directory)" {                
                 In "$($project.directory)" {   
 
-                    It "should migrate" {
+                    It "Should migrate" {
                         $csproj = get-childitem "." "*.csproj"                        
                         #{
                             ConvertFrom-PackagesConfigToPackageReferences $csproj -verbose
                         #} | Should Not Throw
                     }
                     
-                    It "should remove obsolete compile entries" {
-                        $csprojFiles = get-childitem "." "*.csproj"
-                        $csproj = csproj\import-csproj $csprojFiles
+                    $csprojFiles = get-childitem "." "*.csproj"
+                    $csproj = csproj\import-csproj $csprojFiles
+
+                    It "Should remove obsolete compile entries" {
                         $csproj.Xml.project.ItemGroup.Compile | Should BeNullOrEmpty
+                    }
+                    It "Should add Sdk attribute" {
+                        $csproj.Xml.project.Sdk | Should Not BeNullOrEmpty
+                    }
+                    It "Should remove obsolete target imports" {
+                        $csproj.Xml.project.Import | where { $_.project -match "Microsoft.CSharp.targets" } | Should BeNullOrEmpty
+                    }
+                    It "Should not include packages.config" {
+                        $csproj.Xml.project.ItemGroup.None | where { $_.Include -eq 'packages.config'} | Should BeNullOrEmpty                    
                     }
                 }
             }   
         }
     }
-    
 }
