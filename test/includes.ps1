@@ -1,4 +1,4 @@
-. $PSScriptRoot\..\src\Invoke-NugetMigration.ps1
+. $PSScriptRoot\..\src\NugetMigration.ps1
 
 ipmo require
 req pester

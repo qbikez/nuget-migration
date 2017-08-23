@@ -63,6 +63,9 @@ function _convertPackagesConfig {
     $packagesConfig = csproj\import-packagesConfig "packages.config"
     
     $oldRefs = csproj\get-nugetreferences $csproj
+
+    write-verbose "will convert $($oldrefs) nuget references to PackageReferences"
+
     $newRefs = @()
     foreach ($pkg in $packagesConfig.packages) {
         $ref = New-NugetReferenceNode $csproj.xml
@@ -71,7 +74,7 @@ function _convertPackagesConfig {
     
         $newRefs += $ref
     }
-    $oldRefs | % { $_.Node.ParentNode.RemoveChild($_.Node)}
+    $null = $oldRefs | % { $_.Node.ParentNode.RemoveChild($_.Node)}
     
     $other = get-nodes $csproj.xml -nodeName "ItemGroup"
     $lastItemGroup = $null
@@ -79,37 +82,44 @@ function _convertPackagesConfig {
         $last = ([System.Xml.XmlNode]$other[$other.Count - 1].Node)
     }
     
-    $newRefs | % { 
-        $itemgroup = [System.Xml.XmlElement]$csproj.xml.CreateNode([System.Xml.XmlNodeType]::Element, "", "ItemGroup", $ns)            
-        $itemgroup.AppendChild($_)
-        if ($lastItemGroup -ne $null) {
-            $null = $lastItemGroup.ParentNode.InsertAfter($itemgroup, $lastItemGroup)
-            $lastItemGroup = $itemgroup
-        }
-        else {
-            $null = $csproj.xml.project.AppendChild($itemgroup)
-            $lastItemGroup = $itemgroup
-        }   
+    $itemgroup = [System.Xml.XmlElement]$csproj.xml.CreateNode([System.Xml.XmlNodeType]::Element, "", "ItemGroup", $ns)
+    $newRefs | % {         
+        $null = $itemgroup.AppendChild($_)        
     }
+
+    if ($lastItemGroup -ne $null) {
+        $null = $lastItemGroup.ParentNode.InsertAfter($itemgroup, $lastItemGroup)
+        $lastItemGroup = $itemgroup
+    }
+    else {
+        $null = $csproj.xml.project.AppendChild($itemgroup)
+        $lastItemGroup = $itemgroup
+    }   
 }
 
 
 function _AddSdkAttribute {
     param($csproj)
 
+    $group = $null
+
     if ($csproj.xml.project.Sdk -ne $null) {
         write-verbose "project $csproj already has sdk=$($csproj.xml.project.Sdk)"
-        return
+        $group = $csproj.xml.project.PropertyGroup | select -first 1
+    }
+    else {
+        # Add Sdk attribute
+        $attr = [System.Xml.XmlAttribute]$csproj.xml.CreateAttribute("Sdk")
+
+        $null = $csproj.xml.project.Attributes.Append($attr)
+        $csproj.xml.project.Sdk = "Microsoft.NET.Sdk"
     }
 
-    # Add Sdk attribute
+    if ($group -eq $null) { 
+        $group = [System.Xml.XmlElement]$csproj.xml.CreateNode([System.Xml.XmlNodeType]::Element, "", "PropertyGroup", $ns)
+        $csproj.Xml.project.InsertBefore($group, $csproj.Xml.project.FirstChild)
+     }
 
-    $attr = [System.Xml.XmlAttribute]$csproj.xml.CreateAttribute("Sdk")
-
-    $null = $csproj.xml.project.Attributes.Append($attr)
-    $csproj.xml.project.Sdk = "Microsoft.NET.Sdk"
-    
-    # Add TargetFramework property
 
     $targetFx = $csproj.xml.project.PropertyGroup.TargetFrameworkVersion |? { $_ -ne $null } 
     if (@($targetFx).Count -gt 1) {
@@ -120,45 +130,54 @@ function _AddSdkAttribute {
         Write-Warning "project $csproj has no TargetFrameworkVersion property"
         return
     }
-
     $targetFramework = $targetFx.Replace("v","net").Replace(".","")
 
-    $group = [System.Xml.XmlElement]$csproj.xml.CreateNode([System.Xml.XmlNodeType]::Element, "", "PropertyGroup", $ns)
+    _AddMsbuildProperty TargetFramework $targetFramework -group $group
+    _AddMsbuildProperty GenerateAssemblyInfo "$false" -group $group
 
-    Write-Verbose "adding property TargetFramework=$targetFramework"    
-    $frameworkNode = [System.Xml.XmlElement]$csproj.xml.CreateNode([System.Xml.XmlNodeType]::Element, "", "TargetFramework", $ns)    
-    $group.AppendChild($frameworkNode)
-    $group.TargetFramework = $targetFramework
-
-    # Add GenerateAssemblyInfo property
-    
-    Write-Verbose "adding property GenerateAssemblyInfo=$false"
-    $asmNode = [System.Xml.XmlElement]$csproj.xml.CreateNode([System.Xml.XmlNodeType]::Element, "", "GenerateAssemblyInfo", $ns)
-    $group.AppendChild($asmNode)
-    $group.GenerateAssemblyInfo = "$false"
-
-    write-verbose "adding PropertyGroup with new properties"
-    $csproj.Xml.project.InsertBefore($group, $csproj.Xml.project.FirstChild)
-    
     # remove obsolete target imports
-    $toremove = '$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props','$(MSBuildToolsPath)\Microsoft.CSharp.targets' 
+    $toremove = '$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props','$(MSBuildToolsPath)\Microsoft.CSharp.targets','$(SolutionDir)\.nuget\NuGet.targets' 
 
     $imports = $csproj.xml.project.Import | ? { $_.Project -in $toremove }
     foreach($import in $imports) {
         Write-Verbose "removing '$($import.Project)' import"
-        $import.ParentNode.RemoveChild($import)
+        $null = $import.ParentNode.RemoveChild($import)
     }
 
     
 }
 
+function _AddMsbuildProperty {
+    param([Parameter(Mandatory=$true)]$name, [Parameter(Mandatory=$true)]$value, [Parameter(Mandatory=$false)]$group)
+
+    $addgroup = $false
+    if ($group -eq $null) {
+        $group = [System.Xml.XmlElement]$csproj.xml.CreateNode([System.Xml.XmlNodeType]::Element, "", "PropertyGroup", $ns)
+        $addgroup = $false
+    }
+    
+    if ($csproj.xml.project.PropertyGroup.$name -ne $null) {
+        write-verbose "project $csproj already has '$name' property = '$($csproj.xml.project.PropertyGroup.$name)'"
+    }
+    else {
+        Write-Verbose "adding property $name=$value"    
+        $node = [System.Xml.XmlElement]$csproj.xml.CreateNode([System.Xml.XmlNodeType]::Element, "", $name, $ns)    
+        $null = $group.AppendChild($node)
+        $group.$name = $value
+    }
+
+    if ($addgroup) {
+        $null = $csproj.Xml.project.InsertBefore($group, $csproj.Xml.project.FirstChild)
+    }
+    
+}
 
 function Remove-ObsoleteProjectItems {
     param([csproj]$csproj)
 
     foreach ($item in $csproj.Xml.project.ItemGroup) {
         if ($item.Compile -ne $null) {
-            $item.ParentNode.RemoveChild($item)
+            $null = $item.ParentNode.RemoveChild($item)
         }
     }
 }
