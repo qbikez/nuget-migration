@@ -95,3 +95,67 @@ Describe "packages.config to PackageReferences migration tests" {
         }
     }
 }
+
+Describe "nuget tests" {
+    copy-item "$psscriptroot\input\*" "testdrive:" -Recurse
+    if (test-path "$psscriptroot\out") { remove-item "$psscriptroot\out" -Recurse -Force -Confirm:$false }
+    if (!(test-path "$psscriptroot\out\before")) { $null = mkdir "$psscriptroot\out\before" }
+    if (!(test-path "$psscriptroot\out\after")) { $null = mkdir "$psscriptroot\out\after" }
+
+    In "testdrive:\" {
+        $root = $pwd.Path
+        $projects = Get-ChildItem "." "*.csproj" -Recurse
+        
+        foreach ($project in $projects) {
+            $reldir = get-relativepath "." $project.directory
+
+            Context "project: $($project.directory)" {                
+                In "$($project.directory)" {   
+                    $versionStable = "1.2.3"
+                    It "should pack stable before" {
+                        Update-BuildVersion -version $versionStable
+                        $nuget = pack-nuget $($project.name) -Build -Stable
+                        $nuget = split-path -leaf $nuget
+                        $nugetname = $($project.name) -replace ".csproj",""
+                        $nuget | should Be "$nugetname.$versionStable.nupkg"
+                    }
+                    
+                    $outDir = "$psscriptroot\out\before\$reldir"
+                    if (!(test-path $outDir)) { $null = mkdir $outDir }
+                    copy-item "*" $outDir -Recurse -Force
+                    remove-item ".\bin" -Recurse -Force
+                    remove-item ".\obj" -Recurse -Force
+
+                    It "should migrate" {
+                        $csproj = get-childitem "." "*.csproj"                        
+                        #{
+                            ConvertFrom-PackagesConfigToPackageReferences $csproj -verbose
+                        #} | Should Not Throw
+                    }
+
+                    It "should restore after" {
+                        rmdir $root/packages -Force -Confirm:$false -Recurse
+                        invoke msbuild /t:restore $($project.name)
+                        $LASTEXITCODE | should be 0
+                    }
+                    It "should pack with msbuild after" {
+                        invoke msbuild /t:pack $($project.name)
+                        $LASTEXITCODE | should be 0
+                    }
+
+                    It "should pack stable with nupkg after" {
+                        $nuget = pack-nuget $($project.name) -Build -Stable
+                        $nuget = split-path -leaf $nuget
+                        $nugetname = $($project.name) -replace ".csproj",""
+                        $nuget | should Be "$nugetname.$versionStable.nupkg"
+                    }
+
+                    $outDir = "$psscriptroot\out\after\$reldir"
+                    if (!(test-path $outDir)) { $null = mkdir $outDir }
+                    copy-item "*" $outDir -Recurse -Force
+                }
+            }   
+        }
+    }
+
+}
