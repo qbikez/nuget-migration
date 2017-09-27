@@ -1,6 +1,8 @@
 & "$PSScriptRoot\lib\init.ps1"
 
-install-module require -verbose
+install-module require -MinimumVersion 1.1.7.110 -verbose
+ipmo require
+req pester 4.0.8 -SkipPublisherCheck
 
 . $PSScriptRoot\_helpers.ps1
 

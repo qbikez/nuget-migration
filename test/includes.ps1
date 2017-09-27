@@ -1,7 +1,7 @@
 . $PSScriptRoot\..\src\NugetMigration.ps1
 
 ipmo require
-req pester 4.0.8
+req pester
 req process
 req pathutils
 
