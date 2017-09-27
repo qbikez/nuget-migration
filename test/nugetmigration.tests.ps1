@@ -1,20 +1,53 @@
+param($inputPath = $null)
+
 . $PSScriptRoot\includes.ps1
 
+if ($inputPath -ne $null) {
+    $i = get-item $inputPath
+    if ($i.PsIsContainer) {
+        $inputDir = $i
+    } else {
+        $inputFile = split-path -Leaf $inputPath
+        $inputDir = Split-Path -Parent $inputPath
+    }
+}
+if ($inputDir -eq $null) { $inputDir = "$psscriptroot\input" }
+
+if ($inputFile -ne $null) {
+    if ($inputFile.EndsWith(".sln")) {
+        $sln = import-sln "$inputDir\$inputFile"
+        $projects = get-slnprojects -sln $sln
+        $projects = $projects | % { get-item $_.fullname }
+    }
+    elseif ($inputFile.EndsWith(".csproj")) {
+        $projects = @(get-item $inputFile)
+    } 
+    else {
+        throw "unrecognized input file"
+    }
+}
+else {
+    $projects = Get-ChildItem $inputDir "*.csproj" -Recurse
+}
+
+$projects = $projects | % { 
+    $null = $_ | add-member -name "RelDir" -value (get-relativepath "$inputDir" $_.directory) -membertype noteproperty
+    $_
+}
+
 Describe "migration build tests" {
-    copy-item "$psscriptroot\input\*" "testdrive:" -Recurse
+    copy-item "$inputDir\*" "testdrive:" -Recurse
     if (test-path "$psscriptroot\out") { remove-item "$psscriptroot\out" -Recurse -Force -Confirm:$false }
     if (!(test-path "$psscriptroot\out\before")) { $null = mkdir "$psscriptroot\out\before" }
     if (!(test-path "$psscriptroot\out\after")) { $null = mkdir "$psscriptroot\out\after" }
 
     In "testdrive:\" {
         $root = $pwd.Path
-        $projects = Get-ChildItem "." "*.csproj" -Recurse
-        
         foreach ($project in $projects) {
-            $reldir = get-relativepath "." $project.directory
+            $reldir = $project.RelDir
 
-            Context "project: $($project.directory)" {                
-                In "$($project.directory)" {   
+            Context "project: $($project.RelDir)" {                
+                In "$($project.RelDir)" {   
                     It "should restore before" {
                         invoke nuget restore $($project.name)
                         $LASTEXITCODE | should be 0
@@ -33,7 +66,7 @@ Describe "migration build tests" {
                     It "should migrate" {
                         $csproj = get-childitem "." "*.csproj"                        
                         #{
-                            ConvertFrom-PackagesConfigToPackageReferences $csproj -verbose
+                            ConvertFrom-PackagesConfigToPackageReferences $csproj.FullName -verbose
                         #} | Should Not Throw
                     }
 
@@ -58,15 +91,14 @@ Describe "migration build tests" {
 }
 
 Describe "packages.config to PackageReferences migration tests" {  
-    copy-item "$psscriptroot\input\*" "testdrive:" -Recurse
+    copy-item "$inputDir\*" "testdrive:" -Recurse
     In "testdrive:\" {
         $root = $pwd.Path
-        $projects = Get-ChildItem "." "*.csproj" -Recurse
         foreach ($project in $projects) {
-            $reldir = get-relativepath "." $project.directory
+            $reldir = $project.RelDir
 
-            Context "project: $($project.directory)" {                
-                In "$($project.directory)" {   
+            Context "project: $($project.RelDir)" {                
+                In "$($project.RelDir)" {   
 
                     It "Should migrate" {
                         $csproj = get-childitem "." "*.csproj"                        
@@ -97,23 +129,22 @@ Describe "packages.config to PackageReferences migration tests" {
 }
 
 Describe "nuget tests" {
-    copy-item "$psscriptroot\input\*" "testdrive:" -Recurse
+    copy-item "$inputDir\*" "testdrive:" -Recurse
     if (test-path "$psscriptroot\out") { remove-item "$psscriptroot\out" -Recurse -Force -Confirm:$false }
     if (!(test-path "$psscriptroot\out\before")) { $null = mkdir "$psscriptroot\out\before" }
     if (!(test-path "$psscriptroot\out\after")) { $null = mkdir "$psscriptroot\out\after" }
 
     In "testdrive:\" {
         $root = $pwd.Path
-        $projects = Get-ChildItem "." "*.csproj" -Recurse
         
         foreach ($project in $projects) {
-            $reldir = get-relativepath "." $project.directory
+            $reldir = $project.RelDir
 
-            Context "project: $($project.directory)" {                
-                In "$($project.directory)" {   
+            Context "project: $($project.RelDir)" {                
+                In "$($project.RelDir)" {   
                     $versionStable = "1.2.3"
                     It "should pack stable before" {
-                        Update-BuildVersion -version $versionStable
+                        Update-BuildVersion -version $versionStable  
                         $nuget = pack-nuget $($project.name) -Build -Stable
                         $nuget = split-path -leaf $nuget
                         $nugetname = $($project.name) -replace ".csproj",""

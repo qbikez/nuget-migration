@@ -1,9 +1,14 @@
 . $PSScriptRoot\..\src\NugetMigration.ps1
 
 ipmo require
-req pester
+req pester 4.0.8
 req process
 req pathutils
+
+# for some reason, process output gets colored in red when launching tests from vscode
+$env:PS_PROCESS_OUTPUT="verbose"
+# set this to true to see invoked process output
+$env:PS_PROCESS_VERBOSE=$false
 
 . $PSScriptRoot\..\scripts\_helpers.ps1
 

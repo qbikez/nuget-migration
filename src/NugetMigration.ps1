@@ -1,3 +1,6 @@
+# A good guide:
+# http://www.natemcmaster.com/blog/2017/03/09/vs2015-to-vs2017-upgrade/
+# 
 $script:ns = 'http://schemas.microsoft.com/developer/msbuild/2003'
 
 ipmo require
@@ -30,35 +33,58 @@ function _doBackup {
 function ConvertFrom-PackagesConfigToPackageReferences {
     [CmdletBinding()]
     param(
+        [Alias("csproj")]
         [Parameter(Mandatory = $true)]
-        $csproj
+        $project
     )
+    $csproj = $project
 
     if ($csproj -isnot [csproj]) {
-        $csproj = csproj\import-csproj $csproj
+        $path = $csproj
+        if ($path.endswith(".csproj")) {
+            $csproj = csproj\import-csproj $path
+        }
+        elseif ($path.EndsWith(".sln")) {
+            $sln = import-sln $path
+            $projects = get-slnprojects -sln $sln
+            $projects = $projects | % { get-item $_.fullname }
+            foreach($project in $projects) {
+                ConvertFrom-PackagesConfigToPackageReferences $project.FullName
+            }
+            return
+        }
+        else {
+            throw "don't know how to handle file '$path'. Please specify a csproj or sln file"
+        }        
     }
     
     Write-Verbose "migrating project '$($csproj.Name)' to PackageReference format"
     Write-Verbose "doing backup"
     _doBackup $csproj.path
 
+    pushd
     
-    
-    if ((test-path "packages.config")) {
-        _convertPackagesConfig $csproj
-        $node = $csproj.Xml.project.ItemGroup.None | where { $_.Include -eq 'packages.config'} 
-        if ($node -ne $null) {
-            $node.ParentNode.RemoveChild($node)
+    try {
+        cd (split-path -Parent $csproj.path)
+
+        if ((test-path "packages.config")) {
+            $null = _convertPackagesConfig $csproj
+            $node = $csproj.Xml.project.ItemGroup.None | where { $_.Include -eq 'packages.config'} 
+            if ($node -ne $null) {
+                $null = $node.ParentNode.RemoveChild($node)
+            }
+            $null = remove-item "packages.config"
         }
-        remove-item "packages.config"
+
+        $null = Remove-ObsoleteProjectItems $csproj
+        $null = _AddSdkAttribute $csproj
+        
+        $null = $csproj.save()
+
+        Write-Verbose "Done"
+    } finally {
+        popd
     }
-
-    Remove-ObsoleteProjectItems $csproj
-    _AddSdkAttribute $csproj
-    
-    $csproj.save()
-
-    Write-Verbose "Done"
 }
 
 function _convertPackagesConfig {
@@ -136,8 +162,8 @@ function _AddSdkAttribute {
     }
     $targetFramework = $targetFx.Replace("v","net").Replace(".","")
 
-    _AddMsbuildProperty TargetFramework $targetFramework -group $group
-    _AddMsbuildProperty GenerateAssemblyInfo "$false" -group $group
+    $null = _AddMsbuildProperty TargetFramework $targetFramework -group $group
+    $null = _AddMsbuildProperty GenerateAssemblyInfo "$false" -group $group
 
     # remove obsolete target imports
     $toremove = '$(MSBuildExtensionsPath)\$(MSBuildToolsVersion)\Microsoft.Common.props','$(MSBuildToolsPath)\Microsoft.CSharp.targets','$(SolutionDir)\.nuget\NuGet.targets' 
